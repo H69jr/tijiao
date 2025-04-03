@@ -1,0 +1,7 @@
+driver.cc: In function ‘int main(int, char**)’:
+driver.cc:141:9: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  141 |   fscanf(input, "%d", &layer_num);
+      |   ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+driver.cc:154:11: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  154 |     fscanf(input, "%d%d%d%d%d", &IC_arr[l], &H_arr[l], &W_arr[l], &OC_arr[l], &Batch_arr[l]);
+      |     ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
