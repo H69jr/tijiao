@@ -1,0 +1,41 @@
+double free or corruption (!prev)
+./winograd: Aborted
+
+ Performance counter stats for './winograd conf/small.conf':
+
+             11.29 msec task-clock                #    0.110 CPUs utilized          
+                29      context-switches          #    2.569 K/sec                  
+                 0      cpu-migrations            #    0.000 /sec                   
+               159      page-faults               #   14.084 K/sec                  
+        11,261,872      cycles                    #    0.998 GHz                      (93.11%)
+         7,832,619      instructions              #    0.70  insn per cycle         
+         1,481,082      branches                  #  131.190 M/sec                  
+            27,607      branch-misses             #    1.86% of all branches        
+        58,835,010      slots                     #    5.211 G/sec                  
+         8,658,946      topdown-retiring          #     14.6% retiring              
+         5,221,198      topdown-bad-spec          #      8.8% bad speculation       
+         8,279,993      topdown-fe-bound          #     14.0% frontend bound        
+        36,991,892      topdown-be-bound          #     62.5% backend bound         
+         2,012,736      L1-dcache-loads           #  178.282 M/sec                  
+           157,360      L1-dcache-load-misses     #    7.82% of all L1-dcache accesses
+            39,022      LLC-loads                 #    3.456 M/sec                  
+            21,652      LLC-load-misses           #   55.49% of all LL-cache accesses
+   <not supported>      L1-icache-loads                                             
+     <not counted>      L1-icache-load-misses                                         (0.00%)
+     <not counted>      dTLB-loads                                                    (0.00%)
+     <not counted>      dTLB-load-misses                                              (0.00%)
+   <not supported>      iTLB-loads                                                  
+     <not counted>      iTLB-load-misses                                              (0.00%)
+   <not supported>      L1-dcache-prefetches                                        
+   <not supported>      L1-dcache-prefetch-misses                                   
+
+       0.102745276 seconds time elapsed
+
+       0.011653000 seconds user
+       0.000896000 seconds sys
+
+
+Some events weren't counted. Try disabling the NMI watchdog:
+	echo 0 > /proc/sys/kernel/nmi_watchdog
+	perf stat ...
+	echo 1 > /proc/sys/kernel/nmi_watchdog

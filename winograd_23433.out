@@ -1,0 +1,6 @@
+couldn't read file "/usr/lib/x86_64-linux-gnu/modulecmd.tcl": no such file or directory
+couldn't read file "/usr/lib/x86_64-linux-gnu/modulecmd.tcl": no such file or directory
+SLURM_CPUS_PER_TASK = 64
+OMP_NUM_THREADS = 64
+Running on hepnode3
+File open failed. Aborting...

@@ -1,18 +1,29 @@
 #!/bin/bash
-#SBATCH -n 1
-#SBATCH -o slurm-output/winograd-job-%j.out
-#SBATCH -e slurm-error/winograd-job-%j.err
-#SBATCH -c 64
-#SBATCH --exclusive
-#SBATCH --exclude hepnode0
+#SBATCH --job-name=winograd_vgg_hjr
+#SBATCH --output=winograd_%j.out
+#SBATCH --error=winograd_%j.err
+#SBATCH --partition=Compute
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --time=01:00:00
+#SBATCH --mem=8G
 
-# Note: How to run this script on slurm: `sbatch ./run.sh'.
-# Note: see `man sbatch' for more options.
+module purge
+module load gcc/11.4.0
 
-# Note: Manual control number of omp threads
-# export OMP_NUN_THREADS=64
+# 设置OpenMP线程数
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OMP_PLACES=cores
+export OMP_PROC_BIND=close
 
-# Note: numactl - Control NUMA policy for processes or shared memory, see `man numactl'.`
-# Note: perf-stat - Run a command and gather performance counter statistics, see `man perf stat'.
+# 打印环境信息
+echo "SLURM_CPUS_PER_TASK = $SLURM_CPUS_PER_TASK"
+echo "OMP_NUM_THREADS = $OMP_NUM_THREADS"
+echo "Running on $(hostname)"
 
-numactl --cpunodebind=0-3 --membind=0-3 perf stat -ddd ./winograd conf/small.conf 
+# 运行Winograd测试
+./winograd conf/vgg.conf
+
+# 性能分析
+# nsys profile --stats=true ./winograd conf/vgg.conf

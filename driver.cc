@@ -9,21 +9,11 @@
 #include <time.h>
 #include <unistd.h>
 #include <cmath>
-#include <cuda_runtime.h>
-#include <cublas_v2.h>
+
 #include "utils.h"
 #include "winograd.h"
 
 #define LOOP_NUM 3
-
-#define CHECK_CUDA(call) \
-do { \
-    cudaError_t err = (call); \
-    if (err != cudaSuccess) { \
-        fprintf(stderr, "[CUDA Error] %s:%d - %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
 
 double timestamp() {
   struct timeval tv;
@@ -93,7 +83,7 @@ void test_on_one_layer(const int layer_idx,
   for (long i = 0; i < output_channels * input_channels * FLT_H * FLT_W; i++)
     filter[i] = (float)(i / (FLT_H * FLT_W) + 1);
 
-/*  if (validation_mode) {  // Verify mode. Check the result
+  if (validation_mode) {  // Verify mode. Check the result
     float *out_ref = (float *)malloc(sizeof(float) * batch * output_channels * output_height * output_width);
     assert(out_ref != NULL);
     winograd_convolution(
@@ -130,139 +120,7 @@ void test_on_one_layer(const int layer_idx,
 
   free(image);
   free(filter);
-  free(out);*/
-   // ================= GPU计算部分 =================
-    // 1. 定义形状结构体
-    image_shape_t is = {
-        .bs = batch,
-        .ic = input_channels,
-        .h = image_height,
-        .w = image_width
-    };
-    
-    filter_shape_t fs = {
-        .oc = output_channels,
-        .ic = input_channels,
-        .h = 3,
-        .w = 3
-    };
-
-    cudaDeviceSynchronize();
-
-    // 2. 计算分块信息
-    tiling_info_t ti = get_tiling_info(is, fs);
-
-    // 3. 分配GPU内存
-    float *d_image, *d_filter, *d_output;
-    size_t image_bytes = batch * input_channels * image_height * image_width * sizeof(float);
-    size_t filter_bytes = output_channels * input_channels * 3 * 3 * sizeof(float);
-    size_t output_bytes = batch * output_channels * output_height * output_width * sizeof(float);
-
-    cudaError_t err;
-    err = cudaMalloc(&d_image, image_bytes);
-    if(err != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc d_image failed: %s\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    
-    err = cudaMalloc(&d_filter, filter_bytes);
-    if(err != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc d_filter failed: %s\n", cudaGetErrorString(err));
-        cudaFree(d_image);
-        exit(EXIT_FAILURE);
-    }
-    
-    err = cudaMalloc(&d_output, output_bytes);
-    if(err != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc d_output failed: %s\n", cudaGetErrorString(err));
-        cudaFree(d_image);
-        cudaFree(d_filter);
-        exit(EXIT_FAILURE);
-    }
-
-    // 4. 拷贝数据到GPU
-    err = cudaMemcpy(d_image, image, image_bytes, cudaMemcpyHostToDevice);
-    if(err != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy d_image failed: %s\n", cudaGetErrorString(err));
-        goto cleanup;
-    }
-    
-    err = cudaMemcpy(d_filter, filter, filter_bytes, cudaMemcpyHostToDevice);
-    if(err != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy d_filter failed: %s\n", cudaGetErrorString(err));
-        goto cleanup;
-    }
-
-    // 5. 执行卷积计算
-    if (validation_mode) {
-        winograd_convolution_gpu(d_image, d_filter, d_output, is, fs, ti);
-        
-        // 验证模式：比较GPU和CPU结果
-        float *out_ref = (float *)malloc(output_bytes);
-        assert(out_ref != NULL);
-        
-        naive_conv(image, filter, out_ref, batch, input_channels, image_height, image_width, output_channels);
-        
-        // 拷贝GPU结果回CPU
-        err = cudaMemcpy(out, d_output, output_bytes, cudaMemcpyDeviceToHost);
-        if(err != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy output failed: %s\n", cudaGetErrorString(err));
-            free(out_ref);
-            goto cleanup;
-        }
-
-        // 结果比较
-        printf("Layer %-2d: (C H W F B) = (%-3d %-3d %-3d %-3d %-3d) : ", 
-               layer_idx, input_channels, image_height, image_width, output_channels, batch);
-        
-        bool validation_passed = true;
-        for (long n = 0; n < (long)batch * output_height * output_width * output_channels; n++) {
-            if (fabs((out[n] - out_ref[n]) / out_ref[n]) > 1e-2 || isnan(out[n]) || isnan(out_ref[n])) {
-                printf("Validation Failed!\n");
-                printf("GPU[%ld] = %f || CPU[%ld] = %f \n", n, out[n], n, out_ref[n]);
-                validation_passed = false;
-                break;
-            }
-        }
-        if (validation_passed) {
-            printf("Validation Passed!\n");
-        }
-        
-        free(out_ref);
-    } else {
-        // 性能测试模式
-        double start_time = timestamp();
-        for (int i = 0; i < LOOP_NUM; i++) {
-            winograd_convolution_gpu(d_image, d_filter, d_output, is, fs, ti);
-            cudaDeviceSynchronize(); // 确保准确计时
-        }
-        double end_time = timestamp();
-        
-        // 计算性能
-        double elapse_time_all = end_time - start_time;
-        double elapse_time = elapse_time_all / LOOP_NUM;
-        *total_time += elapse_time;
-        
-        long nflops = (long)batch * output_channels * input_channels * 
-                      output_height * output_width * 2 * 9; // 2*9 for 3x3 conv
-        double gflops = (double)nflops * 1.0e-9 / elapse_time;
-        *total_flops += nflops;
-        
-        printf("Layer %-2d: Time %.3f ms (%.2f GFlops)\n", 
-               layer_idx, elapse_time * 1000, gflops);
-    }
-
-cleanup:
-    // 6. 释放GPU内存
-    cudaFree(d_image);
-    cudaFree(d_filter);
-    cudaFree(d_output);
-
-    // 释放CPU内存
-    free(image);
-    free(filter);
-    free(out);
-
+  free(out);
 }
 
 int main(int argc, char *argv[]) {
@@ -280,11 +138,7 @@ int main(int argc, char *argv[]) {
   if (argc > 2) validation_mode = atoi(argv[2]);
 
   int layer_num;
-//  fscanf(input, "%d", &layer_num);
-  if (fscanf(input, "%d", &layer_num) != 1) {
-    fprintf(stderr, "Error reading layer_num\n");
-    exit(1);
-}
+  fscanf(input, "%d", &layer_num);
   if (layer_num <= 0) {
     printf("Invalid layer num %d. Aborting\n", layer_num);
     fclose(input);
@@ -296,7 +150,7 @@ int main(int argc, char *argv[]) {
   int *OC_arr = (int *)malloc(sizeof(int) * layer_num);     // Filters
   int *Batch_arr = (int *)malloc(sizeof(int) * layer_num);  // Batch
 
-/*  for (int l = 0; l < layer_num; ++l) {
+  for (int l = 0; l < layer_num; ++l) {
     fscanf(input, "%d%d%d%d%d", &IC_arr[l], &H_arr[l], &W_arr[l], &OC_arr[l], &Batch_arr[l]);
   }
   fclose(input);
@@ -318,36 +172,7 @@ int main(int argc, char *argv[]) {
   if (!validation_mode) {
     printf("Total elapse time:");
     printf(" %lf. ( %7.2lf GFlops) \n", total_time, (double)total_flops * 1.0e-9 / total_time);
-  }*/
-
-   for (int l = 0; l < layer_num; ++l) {
-        if (fscanf(input, "%d%d%d%d%d", &IC_arr[l], &H_arr[l], &W_arr[l], &OC_arr[l], &Batch_arr[l]) != 5) {
-            printf("Error reading layer %d config\n", l);
-            fclose(input);
-            exit(1);
-        }
-    }
-    fclose(input);
-
-    double total_time = 0.0;
-    long total_flops = 0;
-    for (int l = 0; l < layer_num; l++) {
-        test_on_one_layer(l,
-            validation_mode,
-            H_arr[l],  // 使用[l]而不是[1]
-            W_arr[l],
-            IC_arr[l],
-            OC_arr[l],
-            Batch_arr[l],
-            &total_flops,
-            &total_time);
-    }
-
-    if (!validation_mode) {
-        printf("Total elapse time: %lf s (%7.2f GFlops)\n", 
-               total_time, 
-               (double)total_flops * 1.0e-9 / total_time);
-    }
+  }
 
   if (IC_arr) free(IC_arr);
   if (H_arr) free(H_arr);
